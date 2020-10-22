@@ -14,9 +14,10 @@
 from ..audio.adapter import get_audio_adapter
 from ..separator import Separator
 
-__email__ = 'research@deezer.com'
+__email__ = 'spleeter@deezer.com'
 __author__ = 'Deezer Research'
 __license__ = 'MIT License'
+
 
 
 def entrypoint(arguments, params):
@@ -29,7 +30,8 @@ def entrypoint(arguments, params):
     audio_adapter = get_audio_adapter(arguments.audio_adapter)
     separator = Separator(
         arguments.configuration,
-        arguments.MWF)
+        MWF=arguments.MWF,
+        stft_backend=arguments.stft_backend)
     for filename in arguments.inputs:
         separator.separate_to_file(
             filename,

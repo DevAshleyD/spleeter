@@ -1,4 +1,5 @@
-FROM python:3.6
+ARG BASE=python:3.7
+FROM ${BASE}
 
 # FROM 9.2-base-ubuntu18.04
 # https://gitlab.com/nvidia/container-images/cuda/blob/ubuntu18.04/9.2/base/Dockerfile
@@ -52,6 +53,6 @@ COPY audio_example.mp3 .
 # Spleeter installation.
 RUN apt-get update && apt-get install -y ffmpeg libsndfile1
 RUN pip install musdb museval
-RUN pip install spleeter-gpu==1.4.5
+RUN pip install spleeter-gpu==1.4.9
 
 ENTRYPOINT ["spleeter"]
