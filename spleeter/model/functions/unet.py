@@ -3,91 +3,114 @@
 
 """
 This module contains building functions for U-net source
-separation models in a similar way as in A. Jansson et al. "Singing
-voice separation with deep u-net convolutional networks", ISMIR 2017.
-Each instrument is modeled by a single U-net convolutional
-/ deconvolutional network that take a mix spectrogram as input and the
-estimated sound spectrogram as output.
+separation models in a similar way as in A. Jansson et al. :
+
+"Singing voice separation with deep u-net convolutional networks",
+ISMIR 2017
+
+Each instrument is modeled by a single U-net
+convolutional / deconvolutional network that take a mix spectrogram
+as input and the estimated sound spectrogram as output.
 """
 
 from functools import partial
+from typing import Any, Dict, Iterable, Optional
 
+# pyright: reportMissingImports=false
 # pylint: disable=import-error
-import tensorflow as tf
-
-from tensorflow.keras.layers import (
+import tensorflow as tf  # type: ignore
+from tensorflow.compat.v1 import logging  # type: ignore
+from tensorflow.compat.v1.keras.initializers import he_uniform  # type: ignore
+from tensorflow.keras.layers import (  # type: ignore
+    ELU,
     BatchNormalization,
     Concatenate,
     Conv2D,
     Conv2DTranspose,
     Dropout,
-    ELU,
     LeakyReLU,
     Multiply,
     ReLU,
-    Softmax)
-from tensorflow.compat.v1 import logging
-from tensorflow.compat.v1.keras.initializers import he_uniform
-# pylint: enable=import-error
+    Softmax,
+)
 
 from . import apply
 
-__email__ = 'spleeter@deezer.com'
-__author__ = 'Deezer Research'
-__license__ = 'MIT License'
+# pylint: enable=import-error
+
+__email__ = "spleeter@deezer.com"
+__author__ = "Deezer Research"
+__license__ = "MIT License"
 
 
-def _get_conv_activation_layer(params):
+def _get_conv_activation_layer(params: Dict) -> Any:
     """
+    Parameters:
+        params (Dict):
+            Model parameters.
 
-    :param params:
-    :returns: Required Activation function.
+    Returns:
+        Any:
+            Required Activation function.
     """
-    conv_activation = params.get('conv_activation')
-    if conv_activation == 'ReLU':
+    conv_activation: str = str(params.get("conv_activation"))
+    if conv_activation == "ReLU":
         return ReLU()
-    elif conv_activation == 'ELU':
+    elif conv_activation == "ELU":
         return ELU()
     return LeakyReLU(0.2)
 
 
-def _get_deconv_activation_layer(params):
+def _get_deconv_activation_layer(params: Dict) -> Any:
     """
+    Parameters:
+        params (Dict):
+            Model parameters.
 
-    :param params:
-    :returns: Required Activation function.
+    Returns:
+        Any:
+            Required Activation function.
     """
-    deconv_activation = params.get('deconv_activation')
-    if deconv_activation == 'LeakyReLU':
+    deconv_activation: str = str(params.get("deconv_activation"))
+    if deconv_activation == "LeakyReLU":
         return LeakyReLU(0.2)
-    elif deconv_activation == 'ELU':
+    elif deconv_activation == "ELU":
         return ELU()
     return ReLU()
 
 
 def apply_unet(
-        input_tensor,
-        output_name='output',
-        params={},
-        output_mask_logit=False):
-    """ Apply a convolutionnal U-net to model a single instrument (one U-net
+    input_tensor: tf.Tensor,
+    output_name: str = "output",
+    params: Dict = {},
+    output_mask_logit: bool = False,
+) -> tf.Tensor:
+    """
+    Apply a convolutionnal U-net to model a single instrument (one U-net
     is used for each instrument).
 
-    :param input_tensor:
-    :param output_name: (Optional) , default to 'output'
-    :param params: (Optional) , default to empty dict.
-    :param output_mask_logit: (Optional) , default to False.
+    Parameters:
+        input_tensor (tf.Tensor):
+            Input of the model.
+        output_name (str):
+            (Optional) name of the output, default to 'output'.
+        params (Dict):
+            (Optional) dict of BLSTM parameters.
+        output_mask_logit (bool):
+            (Optional) Sigmoid or logit?
+
+    Returns:
+        tf.Tensor:
+            Output tensor.
     """
-    logging.info(f'Apply unet for {output_name}')
-    conv_n_filters = params.get('conv_n_filters', [16, 32, 64, 128, 256, 512])
+    logging.info(f"Apply unet for {output_name}")
+    conv_n_filters = params.get("conv_n_filters", [16, 32, 64, 128, 256, 512])
     conv_activation_layer = _get_conv_activation_layer(params)
     deconv_activation_layer = _get_deconv_activation_layer(params)
     kernel_initializer = he_uniform(seed=50)
     conv2d_factory = partial(
-        Conv2D,
-        strides=(2, 2),
-        padding='same',
-        kernel_initializer=kernel_initializer)
+        Conv2D, strides=(2, 2), padding="same", kernel_initializer=kernel_initializer
+    )
     # First layer.
     conv1 = conv2d_factory(conv_n_filters[0], (5, 5))(input_tensor)
     batch1 = BatchNormalization(axis=-1)(conv1)
@@ -117,8 +140,9 @@ def apply_unet(
     conv2d_transpose_factory = partial(
         Conv2DTranspose,
         strides=(2, 2),
-        padding='same',
-        kernel_initializer=kernel_initializer)
+        padding="same",
+        kernel_initializer=kernel_initializer,
+    )
     #
     up1 = conv2d_transpose_factory(conv_n_filters[4], (5, 5))((conv6))
     up1 = deconv_activation_layer(up1)
@@ -157,46 +181,60 @@ def apply_unet(
             2,
             (4, 4),
             dilation_rate=(2, 2),
-            activation='sigmoid',
-            padding='same',
-            kernel_initializer=kernel_initializer)((batch12))
+            activation="sigmoid",
+            padding="same",
+            kernel_initializer=kernel_initializer,
+        )((batch12))
         output = Multiply(name=output_name)([up7, input_tensor])
         return output
     return Conv2D(
         2,
         (4, 4),
         dilation_rate=(2, 2),
-        padding='same',
-        kernel_initializer=kernel_initializer)((batch12))
+        padding="same",
+        kernel_initializer=kernel_initializer,
+    )((batch12))
 
 
-def unet(input_tensor, instruments, params={}):
-    """ Model function applier. """
+def unet(
+    input_tensor: tf.Tensor, instruments: Iterable[str], params: Optional[Dict] = None
+) -> Dict:
+    """Model function applier."""
     return apply(apply_unet, input_tensor, instruments, params)
 
 
-def softmax_unet(input_tensor, instruments, params={}):
-    """ Apply softmax to multitrack unet in order to have mask suming to one.
+def softmax_unet(
+    input_tensor: tf.Tensor, instruments: Iterable[str], params: Dict = {}
+) -> Dict:
+    """
+    Apply softmax to multitrack unet in order to have mask suming to one.
 
-    :param input_tensor: Tensor to apply blstm to.
-    :param instruments: Iterable that provides a collection of instruments.
-    :param params: (Optional) dict of BLSTM parameters.
-    :returns: Created output tensor dict.
+    Parameters:
+        input_tensor (tf.Tensor):
+            Tensor to apply blstm to.
+        instruments (Iterable[str]):
+            Iterable that provides a collection of instruments.
+        params (Dict):
+            (Optional) dict of BLSTM parameters.
+
+    Returns:
+        Dict:
+            Created output tensor dict.
     """
     logit_mask_list = []
     for instrument in instruments:
-        out_name = f'{instrument}_spectrogram'
+        out_name = f"{instrument}_spectrogram"
         logit_mask_list.append(
             apply_unet(
                 input_tensor,
                 output_name=out_name,
                 params=params,
-                output_mask_logit=True))
+                output_mask_logit=True,
+            )
+        )
     masks = Softmax(axis=4)(tf.stack(logit_mask_list, axis=4))
     output_dict = {}
     for i, instrument in enumerate(instruments):
-        out_name = f'{instrument}_spectrogram'
-        output_dict[out_name] = Multiply(name=out_name)([
-            masks[..., i],
-            input_tensor])
+        out_name = f"{instrument}_spectrogram"
+        output_dict[out_name] = Multiply(name=out_name)([masks[..., i], input_tensor])
     return output_dict
